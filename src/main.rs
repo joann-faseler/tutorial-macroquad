@@ -1,5 +1,6 @@
 use ::glam::Vec2;
-use macroquad::{prelude::*, rand::gen_range};
+use macroquad::prelude::*;
+use macroquad::rand::gen_range;
 
 struct Shape {
     size: f32,
@@ -18,7 +19,16 @@ impl Shape {
         }
     }
 
-    fn collides_with(&self, other: &Self) -> bool {
+    fn circle(&self) -> Circle {
+        Circle {
+            x: self.position.x,
+            y: self.position.y,
+            r: self.size,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn collides_with_rect(&self, other: &Self) -> bool {
         self.rect().overlaps(&other.rect())
     }
 }
@@ -34,6 +44,10 @@ async fn main() {
     // Set the random number'seed on the current time
     // Doing so produce different numbers every time the game is run.
     rand::srand(miniquad::date::now() as u64);
+
+    let font = load_ttf_font("./assets/fonts/Blazma-Regular.ttf")
+        .await
+        .unwrap();
 
     let mut game_over: bool = false;
     let mut debug_mode: bool = false;
@@ -60,7 +74,18 @@ async fn main() {
 
     loop {
         clear_background(Color::from_hex(0xFFFCF2));
-        if (!game_over) {
+
+        // Break out of the loop therefore quitting the app.
+        if is_key_pressed(KeyCode::Escape) {
+            break;
+        }
+
+        // Switch debug mode
+        if is_key_pressed(KeyCode::D) {
+            debug_mode = !debug_mode;
+        }
+
+        if !game_over {
             let delta_time = get_frame_time();
             velocity = Vec2::ZERO;
 
@@ -104,16 +129,6 @@ async fn main() {
                 velocity.y += 1.0;
             }
 
-            // Break out of the loop therefore quitting the app.
-            if is_key_pressed(KeyCode::Escape) {
-                break;
-            }
-
-            // Switch debug mode
-            if is_key_pressed(KeyCode::D) {
-                debug_mode = !debug_mode;
-            }
-
             // Update player position
             velocity = velocity.normalize_or_zero();
             velocity = velocity * player.speed * delta_time;
@@ -130,6 +145,14 @@ async fn main() {
             // Update mobs position
             for mob in &mut mobs {
                 mob.position.y += mob.speed * delta_time;
+            }
+
+            // Check collision with player
+            if mobs
+                .iter()
+                .any(|mob| player.circle().overlaps_rect(&mob.rect()))
+            {
+                game_over = true;
             }
 
             // Remove mobs not visible on screen
@@ -154,13 +177,30 @@ async fn main() {
             );
         }
 
+        if game_over {
+            let text = "GAME OVER";
+            let font_size: u16 = 48;
+            let text_dimensions = measure_text(text, Some(&font), font_size, 1.0);
+            draw_text_ex(
+                text,
+                (screen_width() * 0.5) - (text_dimensions.width * 0.5),
+                (screen_height() * 0.5) - (text_dimensions.height * 0.5),
+                TextParams {
+                    font: Some(&font),
+                    font_size,
+                    font_scale: 1.0,
+                    color: Color::from_hex(0xEB5E28),
+                    ..Default::default()
+                },
+            );
+        }
+
         if debug_mode {
             // Debug player hitbox
-            draw_rectangle(
-                player.rect().x,
-                player.rect().y,
-                player.rect().w,
-                player.rect().h,
+            draw_circle(
+                player.circle().x,
+                player.circle().y,
+                player.circle().r,
                 Color::from_rgba(0, 255, 0, 122),
             );
 
