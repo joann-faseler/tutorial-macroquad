@@ -7,6 +7,7 @@ struct Shape {
     speed: f32,
     position: Vec2,
     color: Color,
+    collided: bool,
 }
 
 impl Shape {
@@ -60,12 +61,14 @@ async fn main() {
     timer.current_timer = timer.duration;
 
     let mut mobs: Vec<Shape> = vec![];
+    let mut bullets: Vec<Shape> = vec![];
 
     let mut player = Shape {
         size: 16.0,
         speed: 250.0,
         position: Vec2::new(screen_width(), screen_height()) * 0.5,
         color: Color::from_hex(0xEB5E28),
+        collided: false,
     };
 
     let mut velocity: Vec2;
@@ -110,6 +113,7 @@ async fn main() {
                     speed,
                     position,
                     color,
+                    collided: false,
                 });
 
                 timer.current_timer = timer.duration;
@@ -142,9 +146,25 @@ async fn main() {
                 screen_height() - player.size,
             );
 
+            if is_key_pressed(KeyCode::Space) {
+                println!("SHOOT!");
+                bullets.push(Shape {
+                    size: 8.0,
+                    speed: player.speed * 2.0,
+                    position: player.position,
+                    color: player.color,
+                    collided: false,
+                });
+            }
+
             // Update mobs position
             for mob in &mut mobs {
                 mob.position.y += mob.speed * delta_time;
+            }
+
+            // Update bullets position
+            for bullet in &mut bullets {
+                bullet.position -= Vec2::new(0.0, 1.0) * bullet.speed * delta_time;
             }
 
             // Check collision with player
@@ -155,11 +175,28 @@ async fn main() {
                 game_over = true;
             }
 
+            // Check collision between bullets and mobs
+            for bullet in &mut bullets {
+                for mob in &mut mobs {
+                    if bullet.circle().overlaps_rect(&mob.rect()) {
+                        bullet.collided = true;
+                        mob.collided = true;
+                    }
+                }
+            }
+
+            // Remove bullets not visible on screen
+            bullets.retain(|bullet| bullet.position.y > -bullet.size);
+
             // Remove mobs not visible on screen
             mobs.retain(|mob| mob.position.y < screen_height() + mob.size);
+
+            // Remove bullets and mobs which have collided
+            mobs.retain(|mob| !mob.collided);
+            bullets.retain(|bullet| !bullet.collided);
         }
 
-        // Render entities
+        // Draw player
         draw_circle(
             player.position.x,
             player.position.y,
@@ -167,6 +204,7 @@ async fn main() {
             CIRCLE_COLOR,
         );
 
+        // Draw mobs
         for mob in &mobs {
             draw_rectangle(
                 mob.position.x - (mob.size * 0.5),
@@ -174,6 +212,16 @@ async fn main() {
                 mob.size,
                 mob.size,
                 mob.color,
+            );
+        }
+
+        // Draw bullets
+        for bullet in &bullets {
+            draw_circle(
+                bullet.position.x,
+                bullet.position.y,
+                bullet.size,
+                bullet.color,
             );
         }
 
@@ -193,6 +241,20 @@ async fn main() {
                     ..Default::default()
                 },
             );
+
+            if is_key_pressed(KeyCode::Space) {
+                // Reset the player's position
+                player.position = Vec2 {
+                    x: screen_width(),
+                    y: screen_height(),
+                } * 0.5;
+
+                // Remove all instances of mobs and bullets
+                mobs.clear();
+                bullets.clear();
+
+                game_over = false;
+            }
         }
 
         if debug_mode {
@@ -211,6 +273,14 @@ async fn main() {
                     mob.rect().y,
                     mob.rect().w,
                     mob.rect().h,
+                    Color::from_rgba(255, 0, 0, 122),
+                );
+            }
+            for bullet in &bullets {
+                draw_circle(
+                    bullet.circle().x,
+                    bullet.circle().y,
+                    bullet.size,
                     Color::from_rgba(255, 0, 0, 122),
                 );
             }
