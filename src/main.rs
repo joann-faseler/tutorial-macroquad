@@ -1,6 +1,7 @@
 use ::glam::Vec2;
 use macroquad::prelude::*;
 use macroquad::rand::gen_range;
+use std::fs;
 
 struct Shape {
     size: f32,
@@ -52,28 +53,36 @@ async fn main() {
 
     let mut game_over: bool = false;
     let mut debug_mode: bool = false;
+    let mut new_high_score: bool = false;
 
-    let mut timer = Timer {
+    let mut score: u32 = 0;
+    let mut high_score: u32 = fs::read_to_string("high_score.dat")
+        .map_or(Ok(0), |success| success.parse::<u32>())
+        .unwrap_or(0);
+
+    let mut spawn_timer = Timer {
         duration: 0.3,
         ..Default::default()
     };
-
-    timer.current_timer = timer.duration;
+    spawn_timer.current_timer = spawn_timer.duration;
 
     let mut mobs: Vec<Shape> = vec![];
-    let mut bullets: Vec<Shape> = vec![];
 
+    let mut bullets: Vec<Shape> = vec![];
+    let mut bullet_ready: bool = true;
+    let mut last_bullet_fired: f64 = 0.0;
+    const COOLDOWN_BULLET: f64 = 0.2;
+
+    const CIRCLE_COLOR: Color = Color::from_hex(0xEB5E28);
     let mut player = Shape {
         size: 16.0,
         speed: 250.0,
         position: Vec2::new(screen_width(), screen_height()) * 0.5,
-        color: Color::from_hex(0xEB5E28),
+        color: CIRCLE_COLOR,
         collided: false,
     };
 
     let mut velocity: Vec2;
-
-    const CIRCLE_COLOR: Color = Color::from_hex(0xF9A03F);
 
     loop {
         clear_background(Color::from_hex(0xFFFCF2));
@@ -93,11 +102,11 @@ async fn main() {
             velocity = Vec2::ZERO;
 
             // Generate mob
-            if timer.current_timer > 0.0 {
-                timer.current_timer -= delta_time;
+            if spawn_timer.current_timer > 0.0 {
+                spawn_timer.current_timer -= delta_time;
             }
 
-            if timer.current_timer <= 0.0 {
+            if spawn_timer.current_timer <= 0.0 {
                 let size = gen_range(16.0, 64.0);
                 let speed = gen_range(100.0, 200.0);
                 let position = Vec2::new(gen_range(size * 0.5, screen_width() - size * 0.5), -size);
@@ -116,7 +125,7 @@ async fn main() {
                     collided: false,
                 });
 
-                timer.current_timer = timer.duration;
+                spawn_timer.current_timer = spawn_timer.duration;
             }
 
             // Update position
@@ -146,8 +155,8 @@ async fn main() {
                 screen_height() - player.size,
             );
 
-            if is_key_pressed(KeyCode::Space) {
-                println!("SHOOT!");
+            // Spawn bullets
+            if is_key_down(KeyCode::Space) && bullet_ready {
                 bullets.push(Shape {
                     size: 8.0,
                     speed: player.speed * 2.0,
@@ -155,6 +164,14 @@ async fn main() {
                     color: player.color,
                     collided: false,
                 });
+
+                bullet_ready = false;
+                last_bullet_fired = get_time();
+            }
+
+            // Cooldown bullets
+            if !bullet_ready && (get_time() - last_bullet_fired >= COOLDOWN_BULLET) {
+                bullet_ready = true;
             }
 
             // Update mobs position
@@ -172,6 +189,12 @@ async fn main() {
                 .iter()
                 .any(|mob| player.circle().overlaps_rect(&mob.rect()))
             {
+                // Update high_score.dat file if new high score
+                if score == high_score {
+                    fs::write("high_score.dat", high_score.to_string()).ok();
+                    new_high_score = true;
+                }
+
                 game_over = true;
             }
 
@@ -181,6 +204,9 @@ async fn main() {
                     if bullet.circle().overlaps_rect(&mob.rect()) {
                         bullet.collided = true;
                         mob.collided = true;
+
+                        score += mob.size.round() as u32;
+                        high_score = high_score.max(score);
                     }
                 }
             }
@@ -201,7 +227,7 @@ async fn main() {
             player.position.x,
             player.position.y,
             player.size,
-            CIRCLE_COLOR,
+            player.color,
         );
 
         // Draw mobs
@@ -225,24 +251,77 @@ async fn main() {
             );
         }
 
+        // Draw score && high score
+        let font_size = 24;
+        let score_label = format!("SCORE: {}", score);
+        let score_dimensions = measure_text(&score_label, Some(&font), font_size, 1.0);
+        let offset: f32 = 10.0;
+        draw_text_ex(
+            &score_label,
+            offset,
+            score_dimensions.height + offset,
+            TextParams {
+                font: Some(&font),
+                font_size,
+                font_scale: 1.0,
+                color: player.color,
+                ..Default::default()
+            },
+        );
+
+        let high_score_label = format!("HIGHSCORE: {}", high_score);
+        let high_score_dimensions = measure_text(&high_score_label, Some(&font), font_size, 1.0);
+        draw_text_ex(
+            &high_score_label,
+            screen_width() - high_score_dimensions.width - offset,
+            high_score_dimensions.height + offset,
+            TextParams {
+                font: Some(&font),
+                font_size,
+                font_scale: 1.0,
+                color: player.color,
+                ..Default::default()
+            },
+        );
+
         if game_over {
-            let text = "GAME OVER";
+            let gm_text = "GAME OVER";
             let font_size: u16 = 48;
-            let text_dimensions = measure_text(text, Some(&font), font_size, 1.0);
+            let gm_dimensions = measure_text(gm_text, Some(&font), font_size, 1.0);
             draw_text_ex(
-                text,
-                (screen_width() * 0.5) - (text_dimensions.width * 0.5),
-                (screen_height() * 0.5) - (text_dimensions.height * 0.5),
+                gm_text,
+                (screen_width() * 0.5) - (gm_dimensions.width * 0.5),
+                (screen_height() * 0.5) - (gm_dimensions.height * 0.5),
                 TextParams {
                     font: Some(&font),
                     font_size,
                     font_scale: 1.0,
-                    color: Color::from_hex(0xEB5E28),
+                    color: player.color,
                     ..Default::default()
                 },
             );
 
-            if is_key_pressed(KeyCode::Space) {
+            if new_high_score {
+                let hs_text = "NEW HIGH SCORE!";
+                let hs_dimensions = measure_text(hs_text, Some(&font), 32, 1.0);
+                let padding: f32 = 10.0;
+                draw_text_ex(
+                    hs_text,
+                    (screen_width() * 0.5) - (hs_dimensions.width * 0.5),
+                    (screen_height() * 0.5) - (hs_dimensions.height * 0.5)
+                        + gm_dimensions.height
+                        + padding,
+                    TextParams {
+                        font: Some(&font),
+                        font_size: 32,
+                        font_scale: 1.0,
+                        color: player.color,
+                        ..Default::default()
+                    },
+                );
+            }
+
+            if is_key_pressed(KeyCode::Enter) {
                 // Reset the player's position
                 player.position = Vec2 {
                     x: screen_width(),
@@ -252,6 +331,16 @@ async fn main() {
                 // Remove all instances of mobs and bullets
                 mobs.clear();
                 bullets.clear();
+
+                // Reset the mob's spawn timer
+                spawn_timer.current_timer = spawn_timer.duration;
+
+                // Reset the bullet cooldown
+                bullet_ready = true;
+
+                // Reset the score
+                score = 0;
+                new_high_score = false;
 
                 game_over = false;
             }
