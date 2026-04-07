@@ -1,6 +1,7 @@
 use ::glam::Vec2;
 use macroquad::prelude::*;
 use macroquad::rand::gen_range;
+use macroquad_particles::*;
 use std::fs;
 
 struct Shape {
@@ -96,6 +97,8 @@ async fn main() {
     let mut last_bullet_fired: f64 = 0.0;
     const COOLDOWN_BULLET: f64 = 0.2;
 
+    let mut explosions: Vec<(Emitter, Vec2)> = vec![];
+
     const CIRCLE_COLOR: Color = Color::from_hex(0xEB5E28);
     let mut player = Shape {
         size: 16.0,
@@ -104,6 +107,29 @@ async fn main() {
         color: CIRCLE_COLOR,
         collided: false,
     };
+
+    let mut player_thruster: Emitter = Emitter::new(EmitterConfig {
+        local_coords: false,
+        one_shot: false,
+        lifetime: 0.6,
+        lifetime_randomness: 0.2,
+        explosiveness: 0.5,
+        amount: (player.size * 2.0) as u32,
+        shape: ParticleShape::Circle {
+            subdivisions: player.size as u32,
+        },
+        emitting: true,
+        initial_direction: vec2(0.0, 1.0),
+        initial_direction_spread: 0.25 * std::f32::consts::PI,
+        initial_velocity: player.speed,
+        colors_curve: ColorCurve {
+            start: player.color,
+            mid: player.color.with_alpha(0.5),
+            end: player.color.with_alpha(0.0),
+        },
+
+        ..Default::default()
+    });
 
     let mut velocity: Vec2;
 
@@ -240,7 +266,7 @@ async fn main() {
                     },
                 );
                 let font_size = 24;
-                let center_continue = "to";
+                let center_continue = "Press SPACE to CONTINUE";
                 let center_continue_dimensions =
                     measure_text(center_continue, Some(&font), font_size, 1.0);
                 draw_text_ex(
@@ -256,80 +282,11 @@ async fn main() {
                     },
                 );
 
-                let left_continue = "SPACE";
-                let left_continue_dimensions =
-                    measure_text(left_continue, Some(&font), font_size, 1.0);
-                draw_text_ex(
-                    left_continue,
-                    (screen_width() * 0.5)
-                        - center_continue_dimensions.width
-                        - left_continue_dimensions.width
-                        - 10.0,
-                    (screen_height() * 0.5) + (pause_dimensions.height * 2.0),
-                    TextParams {
-                        font: Some(&font),
-                        font_size,
-                        font_scale: 1.0,
-                        color: CIRCLE_COLOR,
-                        ..Default::default()
-                    },
-                );
-
-                let right_continue = "CONTINUE";
-                draw_text_ex(
-                    right_continue,
-                    (screen_width() * 0.5) + center_continue_dimensions.width + 10.0,
-                    (screen_height() * 0.5) + (pause_dimensions.height * 2.0),
-                    TextParams {
-                        font: Some(&font),
-                        font_size,
-                        font_scale: 1.0,
-                        color: CIRCLE_COLOR,
-                        ..Default::default()
-                    },
-                );
-
-                let center_quit = "to";
+                let center_quit = "Press ESCAPE to QUIT";
                 let center_quit_dimensions = measure_text(center_quit, Some(&font), font_size, 1.0);
                 draw_text_ex(
                     center_quit,
                     (screen_width() * 0.5) - (center_quit_dimensions.width * 0.5),
-                    (screen_height() * 0.5)
-                        + (pause_dimensions.height * 2.0)
-                        + (center_continue_dimensions.height * 3.0),
-                    TextParams {
-                        font: Some(&font),
-                        font_size,
-                        font_scale: 1.0,
-                        color: CIRCLE_COLOR,
-                        ..Default::default()
-                    },
-                );
-
-                let left_quit = "ESCAPE";
-                let left_quit_dimensions = measure_text(left_quit, Some(&font), font_size, 1.0);
-                draw_text_ex(
-                    left_quit,
-                    (screen_width() * 0.5)
-                        - center_quit_dimensions.width
-                        - left_quit_dimensions.width
-                        - 10.0,
-                    (screen_height() * 0.5)
-                        + (pause_dimensions.height * 2.0)
-                        + (center_continue_dimensions.height * 3.0),
-                    TextParams {
-                        font: Some(&font),
-                        font_size,
-                        font_scale: 1.0,
-                        color: CIRCLE_COLOR,
-                        ..Default::default()
-                    },
-                );
-
-                let right_quit = "QUIT";
-                draw_text_ex(
-                    right_quit,
-                    (screen_width() * 0.5) + center_quit_dimensions.width + 10.0,
                     (screen_height() * 0.5)
                         + (pause_dimensions.height * 2.0)
                         + (center_continue_dimensions.height * 3.0),
@@ -458,11 +415,41 @@ async fn main() {
                 for bullet in &mut bullets {
                     for mob in &mut mobs {
                         if bullet.circle().overlaps_rect(&mob.rect()) {
+                            // Flag both instances if they collided
                             bullet.collided = true;
                             mob.collided = true;
 
+                            // Update the score
                             score += mob.size.round() as u32;
                             high_score = high_score.max(score);
+
+                            // Create a particle explosion
+                            explosions.push((
+                                Emitter::new(EmitterConfig {
+                                    local_coords: false,
+                                    one_shot: true,
+                                    lifetime: 0.7,
+                                    lifetime_randomness: 0.3,
+                                    explosiveness: 0.5,
+                                    amount: (mob.size * 1.2) as u32,
+                                    initial_direction_spread: std::f32::consts::PI * 2.0,
+                                    initial_velocity: mob.speed,
+                                    initial_velocity_randomness: 0.8,
+                                    size: mob.size * 0.2,
+                                    size_randomness: 0.8,
+                                    size_curve: Some(Curve {
+                                        points: vec![(0.0, 1.0), (1.0, 0.0)],
+                                        ..Default::default()
+                                    }),
+                                    colors_curve: ColorCurve {
+                                        start: mob.color,
+                                        mid: mob.color.with_alpha(0.5),
+                                        end: mob.color.with_alpha(0.0),
+                                    },
+                                    ..Default::default()
+                                }),
+                                Vec2::new(mob.position.x, mob.position.y),
+                            ));
                         }
                     }
                 }
@@ -477,6 +464,11 @@ async fn main() {
                 mobs.retain(|mob| !mob.collided);
                 bullets.retain(|bullet| !bullet.collided);
 
+                // Remove particle explosion which have been emitted
+                // Once emitted, the <emitting> field will automatically switch to <false>
+                // That is because the EmitterConfig <one_shot> field is set to <true>
+                explosions.retain(|(explosion, _)| explosion.config.emitting);
+
                 // Draw player
                 draw_circle(
                     player.position.x,
@@ -484,6 +476,12 @@ async fn main() {
                     player.size,
                     player.color,
                 );
+
+                // Draw thrusters
+                player_thruster.draw(vec2(
+                    player.position.x,
+                    player.position.y + (player.size * 0.5),
+                ));
 
                 // Draw mobs
                 for mob in &mobs {
@@ -504,6 +502,11 @@ async fn main() {
                         bullet.size,
                         bullet.color,
                     );
+                }
+
+                // Draw particle explosions
+                for (explosion, coordinates) in explosions.iter_mut() {
+                    explosion.draw(vec2(coordinates.x, coordinates.y));
                 }
 
                 // Draw score && high score
@@ -657,7 +660,7 @@ async fn main() {
                     }
                 }
                 let font_size = 24;
-                let center_continue = "to";
+                let center_continue = "Press SPACE to RESTART";
                 let center_continue_dimensions =
                     measure_text(center_continue, Some(&font), font_size, 1.0);
                 draw_text_ex(
@@ -673,80 +676,11 @@ async fn main() {
                     },
                 );
 
-                let left_continue = "SPACE";
-                let left_continue_dimensions =
-                    measure_text(left_continue, Some(&font), font_size, 1.0);
-                draw_text_ex(
-                    left_continue,
-                    (screen_width() * 0.5)
-                        - center_continue_dimensions.width
-                        - left_continue_dimensions.width
-                        - 10.0,
-                    (screen_height() * 0.5) + (gm_dimensions.height * 2.0),
-                    TextParams {
-                        font: Some(&font),
-                        font_size,
-                        font_scale: 1.0,
-                        color: CIRCLE_COLOR,
-                        ..Default::default()
-                    },
-                );
-
-                let right_continue = "RESTART";
-                draw_text_ex(
-                    right_continue,
-                    (screen_width() * 0.5) + center_continue_dimensions.width + 10.0,
-                    (screen_height() * 0.5) + (gm_dimensions.height * 2.0),
-                    TextParams {
-                        font: Some(&font),
-                        font_size,
-                        font_scale: 1.0,
-                        color: CIRCLE_COLOR,
-                        ..Default::default()
-                    },
-                );
-
-                let center_quit = "to";
+                let center_quit = "Press ESCAPE to QUIT";
                 let center_quit_dimensions = measure_text(center_quit, Some(&font), font_size, 1.0);
                 draw_text_ex(
                     center_quit,
                     (screen_width() * 0.5) - (center_quit_dimensions.width * 0.5),
-                    (screen_height() * 0.5)
-                        + (gm_dimensions.height * 2.0)
-                        + (center_continue_dimensions.height * 3.0),
-                    TextParams {
-                        font: Some(&font),
-                        font_size,
-                        font_scale: 1.0,
-                        color: CIRCLE_COLOR,
-                        ..Default::default()
-                    },
-                );
-
-                let left_quit = "ESCAPE";
-                let left_quit_dimensions = measure_text(left_quit, Some(&font), font_size, 1.0);
-                draw_text_ex(
-                    left_quit,
-                    (screen_width() * 0.5)
-                        - center_quit_dimensions.width
-                        - left_quit_dimensions.width
-                        - 10.0,
-                    (screen_height() * 0.5)
-                        + (gm_dimensions.height * 2.0)
-                        + (center_continue_dimensions.height * 3.0),
-                    TextParams {
-                        font: Some(&font),
-                        font_size,
-                        font_scale: 1.0,
-                        color: CIRCLE_COLOR,
-                        ..Default::default()
-                    },
-                );
-
-                let right_quit = "QUIT";
-                draw_text_ex(
-                    right_quit,
-                    (screen_width() * 0.5) + center_quit_dimensions.width + 10.0,
                     (screen_height() * 0.5)
                         + (gm_dimensions.height * 2.0)
                         + (center_continue_dimensions.height * 3.0),
@@ -766,12 +700,15 @@ async fn main() {
                         y: screen_height(),
                     } * 0.5;
 
-                    // Remove all instances of mobs and bullets
+                    // Remove all instances of mobs, bullets and explosions
                     mobs.clear();
                     bullets.clear();
+                    explosions.clear();
 
-                    // Reset the mob's spawn timer
+                    // Reset all the timers
                     spawn_timer.current_timer = spawn_timer.duration;
+                    press_start_timer.current_timer = press_start_timer.duration;
+                    high_score_timer.current_timer = high_score_timer.duration;
 
                     // Reset the bullet cooldown
                     bullet_ready = true;
@@ -796,6 +733,9 @@ async fn main() {
 fn configuration_window() -> Conf {
     Conf {
         window_title: "Macroquad Tutorial".to_string(),
+        window_width: 800,
+        window_height: 600,
+        window_resizable: false,
         ..Default::default()
     }
 }
