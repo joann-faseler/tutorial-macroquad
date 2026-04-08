@@ -1,4 +1,5 @@
 use ::glam::Vec2;
+use macroquad::audio::{PlaySoundParams, load_sound, play_sound, set_sound_volume};
 use macroquad::prelude::*;
 use macroquad::rand::gen_range;
 use macroquad_particles::*;
@@ -60,6 +61,10 @@ async fn main() {
     let font = load_ttf_font("./assets/fonts/Blazma-Regular.ttf")
         .await
         .unwrap();
+
+    let music = load_sound("./assets/sounds/music.ogg").await.unwrap();
+    let sound_explosion = load_sound("./assets/sounds/explosion.wav").await.unwrap();
+    let sound_bullet = load_sound("./assets/sounds/bullet.wav").await.unwrap();
 
     let mut debug_mode: bool = false;
     let mut new_high_score: bool = false;
@@ -133,12 +138,22 @@ async fn main() {
 
     let mut velocity: Vec2;
 
+    play_sound(
+        &music,
+        PlaySoundParams {
+            looped: true,
+            volume: 1.0,
+        },
+    );
+
     loop {
         clear_background(Color::from_hex(0xFFFCF2));
 
         #[allow(clippy::single_match)]
         match game_state {
             GameState::MainMenu => {
+                set_sound_volume(&music, 0.1);
+
                 if is_key_pressed(KeyCode::Space) {
                     game_state = GameState::Playing;
                 }
@@ -202,6 +217,8 @@ async fn main() {
                 }
             }
             GameState::Paused => {
+                set_sound_volume(&music, 0.1);
+
                 if is_key_pressed(KeyCode::Escape) {
                     break;
                 }
@@ -300,6 +317,8 @@ async fn main() {
                 );
             }
             GameState::Playing => {
+                set_sound_volume(&music, 0.7);
+
                 if is_key_pressed(KeyCode::Escape) {
                     game_state = GameState::Paused;
                 }
@@ -380,6 +399,14 @@ async fn main() {
 
                     bullet_ready = false;
                     last_bullet_fired = get_time();
+
+                    play_sound(
+                        &sound_bullet,
+                        PlaySoundParams {
+                            looped: false,
+                            volume: rand::gen_range(0.5, 1.0),
+                        },
+                    );
                 }
 
                 // Cooldown bullets
@@ -450,6 +477,15 @@ async fn main() {
                                 }),
                                 Vec2::new(mob.position.x, mob.position.y),
                             ));
+
+                            // Play an explosion sound
+                            play_sound(
+                                &sound_explosion,
+                                PlaySoundParams {
+                                    looped: false,
+                                    volume: rand::gen_range(0.5, 1.0),
+                                },
+                            );
                         }
                     }
                 }
@@ -573,6 +609,8 @@ async fn main() {
                 }
             }
             GameState::GameOver => {
+                set_sound_volume(&music, 0.1);
+
                 // Draw player
                 draw_circle(
                     player.position.x,
